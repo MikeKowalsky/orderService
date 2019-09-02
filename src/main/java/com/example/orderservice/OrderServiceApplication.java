@@ -1,11 +1,15 @@
 package com.example.orderservice;
 
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.statemachine.StateContext;
@@ -23,6 +27,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
 
 import javax.persistence.Entity;
+import javax.persistence.GeneratedValue;
+import javax.persistence.Id;
 import java.util.Date;
 
 @SpringBootApplication
@@ -52,36 +58,62 @@ enum OrderStates {
 @Component
 class Runner implements ApplicationRunner {
 
-	private final StateMachineFactory<OrderStates, OrderEvents> factory;
+	private final OrderService orderService;
 
-	Runner(StateMachineFactory<OrderStates, OrderEvents> factory){
-		this.factory = factory;
+	Runner(OrderService orderService){
+		this.orderService = orderService;
 	}
 
 	@Override
 	public void run(ApplicationArguments args) throws Exception {
 
-		Long orderId = 123123453L;
-		StateMachine<OrderStates, OrderEvents> machine = this.factory.getStateMachine(Long.toString(orderId));
-		machine.getExtendedState().getVariables().putIfAbsent("orderId", orderId);
+		Order order = this.orderService.create(new Date());
 
-		machine.start();
+	}
+}
 
-		log.info("current state " + machine.getState().getId().name());
 
-		machine.sendEvent(OrderEvents.PAY);
+interface OrderRepository extends JpaRepository<Order, Long>{}
 
-		log.info("current state " + machine.getState().getId().name());
 
-		Message<OrderEvents> eventsMessage = MessageBuilder
-				.withPayload(OrderEvents.FULFILL)
-				.setHeader("a", "b")
-				.build();
+@Entity
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+class Order {
 
-		machine.sendEvent(eventsMessage);
+	@Id
+	@GeneratedValue
+	private Long id;
+	private Date datetime;
+	private String state;
 
-		log.info("current state " + machine.getState().getId().name());
+	public Order(Date d, OrderStates os){
+		this.datetime = d;
+		this.setOrderState(os);
+	}
 
+	public OrderStates getOrderState(){
+		return OrderStates.valueOf(this.state);
+	}
+
+	public void setOrderState(OrderStates s){
+		this.state = s.name();
+	}
+}
+
+@Service
+class OrderService {
+
+	private final OrderRepository orderRepository;
+
+	OrderService(OrderRepository orderRepository){
+		this.orderRepository = orderRepository;
+	}
+
+	Order create(Date when){
+		return this.orderRepository
+				.save(new Order(when, OrderStates.SUBMITTED));
 	}
 }
 
